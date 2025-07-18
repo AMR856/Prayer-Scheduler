@@ -26,7 +26,7 @@ const transporter = nodemailer.createTransport({
 });
 
 // Refresh timings daily at 1:00 AM and schedule jobs
-cron.schedule('1 0 * * *', async () => {
+cron.schedule('1 1 * * *', async () => {
   try {
     const response = await axios.get(`https://api.aladhan.com/v1/timingsByCity?city=${city}&country=${country}&method=${method}`);
     const timings = response.data.data.timings;
@@ -38,7 +38,7 @@ cron.schedule('1 0 * * *', async () => {
       Maghrib: toCron(timings.Maghrib),
       Isha: toCron(timings.Isha),
     };
-
+    console.log(cronExpressions);
     for (const [prayer, cronTime] of Object.entries(cronExpressions)) {
       cron.schedule(cronTime, () => {
         const mailOptions = {
@@ -57,9 +57,11 @@ cron.schedule('1 0 * * *', async () => {
       });
     }
 
+    console.log("Cron job started at:", new Date().toString()); // This will be in UTC 
     console.log("✅ Prayer times fetched and jobs scheduled.");
-
   } catch (error) {
     console.error("❌ Error fetching prayer times:", error);
   }
+}, {
+  timezone: 'Africa/Cairo'
 });
