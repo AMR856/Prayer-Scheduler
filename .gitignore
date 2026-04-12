@@ -1,2 +1,4 @@
 node_modules/
 .env
+credientials.txt
+skills-lock.json
