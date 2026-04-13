@@ -16,6 +16,8 @@ class NotificationService {
   static #authToken = process.env.TWILIO_AUTH_TOKEN;
   static #whatsappFrom = process.env.TWILIO_WHATSAPP_NUMBER;
   static #scheduledTasks = [];
+  static #emailUsers = [];
+  static #phoneUsers = [];
   static #emailTransporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
@@ -24,6 +26,23 @@ class NotificationService {
     }
   });
   static #twilioClient = require('twilio')(NotificationService.#accountSid, NotificationService.#authToken);
+
+  static async #refreshRecipients() {
+    try {
+      const [emailUsers, phoneUsers] = await Promise.all([
+        userService.getEmailUsers(),
+        userService.getPhoneUsers()
+      ]);
+
+      NotificationService.#emailUsers = emailUsers;
+      NotificationService.#phoneUsers = phoneUsers;
+      console.log(
+        `Recipients refreshed: ${emailUsers.length} email(s), ${phoneUsers.length} phone(s)`
+      );
+    } catch (err) {
+      console.error('Error refreshing recipients:', err.message);
+    }
+  }
 
   static #generateIslamicFinderUrl() {
     const now = new Date();
@@ -34,7 +53,8 @@ class NotificationService {
 
   static #loadEmailTemplate(prayer, time) {
     try {
-      const templatePath = path.join(__dirname, '..', '..', 'templates', 'email-template.html');
+      const templatePath = path.join(__dirname, '..', '..', '..','templates', 'email-template.html');
+      console.log('Loading email template from:', templatePath);
       let template = fs.readFileSync(templatePath, 'utf-8');
       template = template.replace(/{{PRAYER_NAME}}/g, prayer);
       template = template.replace(/{{PRAYER_TIME}}/g, time);
@@ -95,9 +115,7 @@ class NotificationService {
         `https://api.aladhan.com/v1/timingsByCity?city=${NotificationService.#city}&country=${NotificationService.#country}&method=${NotificationService.#method}`
       );
       const timings = response.data.data.timings;
-
-      const emailUsers = await userService.getEmailUsers();
-      const phoneUsers = await userService.getPhoneUsers();
+      await NotificationService.#refreshRecipients();
 
       const cronExpressions = {
         Fajr: toCron(timings.Fajr),
@@ -113,8 +131,16 @@ class NotificationService {
           async () => {
             console.log(`Triggering ${prayer} notification at ${new Date().toLocaleString()}`);
             await Promise.all([
-              NotificationService.#sendEmailReminder(emailUsers, prayer, timings[prayer]),
-              NotificationService.#sendWhatsAppReminder(phoneUsers, prayer, timings[prayer])
+              NotificationService.#sendEmailReminder(
+                NotificationService.#emailUsers,
+                prayer,
+                timings[prayer]
+              ),
+              NotificationService.#sendWhatsAppReminder(
+                NotificationService.#phoneUsers,
+                prayer,
+                timings[prayer]
+              )
             ]);
           },
           {
@@ -133,6 +159,7 @@ class NotificationService {
 
   static async start() {
     console.log('Starting notification scheduler...');
+    this.#loadEmailTemplate();
     await NotificationService.#handleCron();
 
     cron.schedule(
@@ -153,6 +180,10 @@ class NotificationService {
     NotificationService.#scheduledTasks.forEach((task) => task.stop());
     NotificationService.#scheduledTasks = [];
     console.log('Notification scheduler stopped.');
+  }
+
+  static async refreshRecipients() {
+    await NotificationService.#refreshRecipients();
   }
 }
 
